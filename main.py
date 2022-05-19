@@ -28,61 +28,64 @@ class BTree:
         self.root = self.Node()
         self.t = t
 
-    def _inorder(self, cur):
-        if cur == None: return
+    def _inorder(self, current):
+        if current is None:
+            return
 
-        for i, son in enumerate(cur.child):
+        for i, son in enumerate(current.child):
             if i > 0:
-                yield cur.keys[i - 1]
+                yield current.keys[i - 1]
             yield from self._inorder(son)
 
     def inorder(self):
         yield from self._inorder(self.root)
 
-    def _preorder(self, cur):
-        if cur == None: return
-        for key in cur.keys:
+    def _preorder(self, current):
+        if current is None:
+            return
+        for key in current.keys:
             yield key
-        for son in cur.child:
+        for son in current.child:
             yield from self._preorder(son)
 
     def preorder(self):
         yield from self._preorder(self.root)
 
-    def _split(self, node, parnode, pos):
-
-        # root case
+    def _split(self, node, parnode, position):
         if parnode is None:
             self.root = self.Node()
             left = self.Node()
             right = self.Node()
+
             left.keys = node.keys[:self.t - 1]
             right.keys = node.keys[self.t:]
             left.child = node.child[:self.t]
             right.child = node.child[self.t:]
+
             self.root.keys = [node.keys[self.t - 1]]
             self.root.child = [left, right]
             return self.root
         else:
             left = self.Node()
             right = self.Node()
+
             left.keys = node.keys[:self.t - 1]
             right.keys = node.keys[self.t:]
             left.child = node.child[:self.t]
             right.child = node.child[self.t:]
-            parnode.keys = parnode.keys[:pos] + [node.keys[self.t - 1]] + parnode.keys[pos:]
-            parnode.child = parnode.child[:pos] + [left, right] + parnode.child[pos + 1:]
+
+            parnode.keys = parnode.keys[:position] + [node.keys[self.t - 1]] + parnode.keys[position:]
+            parnode.child = parnode.child[:position] + [left, right] + parnode.child[position + 1:]
 
     def _insert(self, key, node, parnode):
-        if node is None: return None
+        if node is None:
+            return None
 
-        # node is full, and must be root
         if len(node.keys) == 2 * self.t - 1:
             assert node == self.root
             node = self._split(node, parnode, -1)
             assert len(node.keys) == 1
 
-            # to the right
             if node.keys[0] <= key:
                 self._insert(key, node.child[1], node)
             else:
@@ -90,7 +93,6 @@ class BTree:
 
             return
 
-        # only possible for root at the beginning
         if len(node.child) == 0:
             assert node == self.root
             node.child.append(None)
@@ -99,24 +101,22 @@ class BTree:
 
             return
 
-        pos = node._lower_bound(key)
+        position = node._lower_bound(key)
 
-        # we are in a leaf
-        if node.child[pos] is None:
-            node.keys = node.keys[:pos] + [key] + node.keys[pos:]
+        if node.child[position] is None:
+            node.keys = node.keys[:position] + [key] + node.keys[position:]
             node.child.append(None)
         else:
 
-            # son is full, doing split from here
-            if node.child[pos] is not None and len(node.child[pos].keys) == 2 * self.t - 1:
-                self._split(node.child[pos], node, pos)
-                # go to right
-                if node.keys[pos] <= key:
-                    self._insert(key, node.child[pos + 1], node)
+            if node.child[position] is not None and len(node.child[position].keys) == 2 * self.t - 1:
+                self._split(node.child[position], node, position)
+
+                if node.keys[position] <= key:
+                    self._insert(key, node.child[position + 1], node)
                 else:
-                    self._insert(key, node.child[pos], node)
+                    self._insert(key, node.child[position], node)
             else:
-                self._insert(key, node.child[pos], node)
+                self._insert(key, node.child[position], node)
 
     def insert(self, key):
         self._insert(key, self.root, None)
@@ -125,18 +125,18 @@ class BTree:
         if node is None or len(node.child) == 0:
             return None
 
-        pos = node._lower_bound(key)
+        position = node._lower_bound(key)
 
-        if pos >= 1 and node.keys[pos - 1] == key:
-            return node.keys[pos - 1]
+        if position >= 1 and node.keys[position - 1] == key:
+            return node.keys[position - 1]
         else:
-            return self._find(key, node.child[pos])
+            return self._find(key, node.child[position])
 
     def find(self, key):
         return self._find(key, self.root)
 
     def _find_predecessor(self, key, node):
-        if node.child[0] == None:
+        if node.child[0] is None:
             return node.keys[-1]
         else:
             return self._find_predecessor(key, node.child[-1])
@@ -147,50 +147,45 @@ class BTree:
         else:
             return self._find_succesor(key, node.child[0])
 
-    def _delete_key_leaf(self, key, node, pos):
-
-        # condition for correctness of algorithm
+    def _delete_key_leaf(self, key, node, position):
         assert node == self.root or len(node.child) >= self.t
 
-        assert node.keys[pos] == key
+        assert node.keys[position] == key
 
-        node.keys = node.keys[:pos] + node.keys[pos + 1:]
+        node.keys = node.keys[:position] + node.keys[position + 1:]
         node.child.pop()
 
-    def _merge_children_around_key(self, key, node, pos):
+    def _merge_children_around_key(self, key, node, position):
+        assert 0 <= position < len(node.child) - 1
 
-        assert 0 <= pos < len(node.child) - 1
+        value = self.Node()
+        value.child = node.child[position].child + node.child[position + 1].child
+        value.keys = node.child[position].keys + [node.keys[position]] + node.child[position + 1].keys
 
-        y = self.Node()
-        y.child = node.child[pos].child + node.child[pos + 1].child
-        y.keys = node.child[pos].keys + [node.keys[pos]] + node.child[pos + 1].keys
+        node.keys = node.keys[:position] + node.keys[position + 1:]
+        node.child = node.child[:position] + [value] + node.child[position + 2:]
 
-        node.keys = node.keys[:pos] + node.keys[pos + 1:]
-        node.child = node.child[:pos] + [y] + node.child[pos + 2:]
+    def _move_node_from_left_child(self, node, position):
+        assert position > 0 and len(node.child[position - 1].keys) >= self.t
 
-    def _move_node_from_left_child(self, node, pos):
+        node.child[position].keys = [node.keys[position - 1]] + node.child[position].keys
+        node.child[position].child = [node.child[position - 1].child[-1]] + node.child[position].child
 
-        assert pos > 0 and len(node.child[pos - 1].keys) >= self.t
+        node.keys[position - 1] = node.child[position - 1].keys[-1]
 
-        node.child[pos].keys = [node.keys[pos - 1]] + node.child[pos].keys
-        node.child[pos].child = [node.child[pos - 1].child[-1]] + node.child[pos].child
+        node.child[position - 1].child = node.child[position - 1].child[:-1]
+        node.child[position - 1].keys = node.child[position - 1].keys[:-1]
 
-        node.keys[pos - 1] = node.child[pos - 1].keys[-1]
+    def _move_node_from_right_child(self, node, position):
+        assert position < len(node.child) - 1 and len(node.child[position + 1].keys) >= self.t
 
-        node.child[pos - 1].child = node.child[pos - 1].child[:-1]
-        node.child[pos - 1].keys = node.child[pos - 1].keys[:-1]
+        node.child[position].keys = node.child[position].keys + [node.keys[position]]
+        node.child[position].child = node.child[position].child + [node.child[position + 1].child[0]]
 
-    def _move_node_from_right_child(self, node, pos):
+        node.keys[position] = node.child[position + 1].keys[0]
 
-        assert pos < len(node.child) - 1 and len(node.child[pos + 1].keys) >= self.t
-
-        node.child[pos].keys = node.child[pos].keys + [node.keys[pos]]
-        node.child[pos].child = node.child[pos].child + [node.child[pos + 1].child[0]]
-
-        node.keys[pos] = node.child[pos + 1].keys[0]
-
-        node.child[pos + 1].child = node.child[pos + 1].child[1:]
-        node.child[pos + 1].keys = node.child[pos + 1].keys[1:]
+        node.child[position + 1].child = node.child[position + 1].child[1:]
+        node.child[position + 1].keys = node.child[position + 1].keys[1:]
 
     def _fix_empty_root(self, node):
         if node == self.root and len(node.child) == 1:
@@ -200,83 +195,73 @@ class BTree:
             return node
 
     def _delete(self, key, node):
-        if node is None or len(node.child) == 0: return
+        if node is None or len(node.child) == 0:
+            return
 
-        pos = node._lower_bound(key)
+        position = node._lower_bound(key)
 
-        # the key to delete is here
-        if pos > 0 and node.keys[pos - 1] == key:
+        if position > 0 and node.keys[position - 1] == key:
 
-            # this node is a leaf
-            if node.child[pos] is None:
-                self._delete_key_leaf(key, node, pos - 1)
-            # left child node has enough keys
-            elif len(node.child[pos - 1].keys) >= self.t:
-                kp = self._find_predecessor(key, node.child[pos - 1])
-                node.keys[pos - 1] = kp
-                self._delete(kp, node.child[pos - 1])
-            # right child node has enough keys
-            elif len(node.child[pos].keys) >= self.t:
-                kp = self._find_succesor(key, node.child[pos])
-                node.keys[pos - 1] = kp
-                self._delete(kp, node.child[pos])
-            # both children have minimal number of keys, must combine them
+            if node.child[position] is None:
+                self._delete_key_leaf(key, node, position - 1)
+
+            elif len(node.child[position - 1].keys) >= self.t:
+                kp = self._find_predecessor(key, node.child[position - 1])
+                node.keys[position - 1] = kp
+                self._delete(kp, node.child[position - 1])
+
+            elif len(node.child[position].keys) >= self.t:
+                kp = self._find_succesor(key, node.child[position])
+                node.keys[position - 1] = kp
+                self._delete(kp, node.child[position])
+
             else:
-                self._merge_children_around_key(key, node, pos - 1)
+                self._merge_children_around_key(key, node, position - 1)
 
-                # here I should take care of missing root
                 node = self._fix_empty_root(node)
 
                 self._delete(key, node)
         else:
 
-            # we are on a leave and haven't found the key, we have nothing to do
-            if node.child[pos] is None:
+            if node.child[position] is None:
                 pass
-            # the amount of keys in the child is enough, simply recurse
-            elif len(node.child[pos].keys) >= self.t:
-                self._delete(key, node.child[pos])
-            # we must push a key to the child
+            elif len(node.child[position].keys) >= self.t:
+                self._delete(key, node.child[position])
             else:
-                # left sibbling has enough keys
-                if pos > 0 and len(node.child[pos - 1].keys) >= self.t:
-                    self._move_node_from_left_child(node, pos)
-                    self._delete(key, node.child[pos])
-                # right sibbling has enough keys
-                elif pos < len(node.child) - 1 and len(node.child[pos + 1].keys) >= self.t:
-                    self._move_node_from_right_child(node, pos)
-                    self._delete(key, node.child[pos])
-                # must merge with one of sibblings
+                if position > 0 and len(node.child[position - 1].keys) >= self.t:
+                    self._move_node_from_left_child(node, position)
+                    self._delete(key, node.child[position])
+                elif position < len(node.child) - 1 and len(node.child[position + 1].keys) >= self.t:
+                    self._move_node_from_right_child(node, position)
+                    self._delete(key, node.child[position])
                 else:
 
-                    if pos > 0:
-                        self._merge_children_around_key(key, node, pos - 1)
+                    if position > 0:
+                        self._merge_children_around_key(key, node, position - 1)
 
-                        # here I should take care of missing root
                         node = self._fix_empty_root(node)
 
                         self._delete(key, node)
-                    elif pos < len(node.child) - 1:
-                        self._merge_children_around_key(key, node, pos)
+                    elif position < len(node.child) - 1:
+                        self._merge_children_around_key(key, node, position)
 
-                        # here I should take care of missing root
                         node = self._fix_empty_root(node)
 
                         self._delete(key, node)
-                    # this shouldn't be possible
                     else:
                         assert False
 
     def delete(self, key):
         self._delete(key, self.root)
 
-    def _find_all(self, key, node, ans):
-        if node is None or len(node.child) == 0: return
+    def _find_all(self, key, node, line):
+        if node is None or len(node.child) == 0:
+            return
         b = 0
         e = len(node.child) - 1
         while b < e:
             mid = (b + e + 1) // 2
-            if mid == 0:  # mid is never 0 actually
+            if mid == 0:
                 pass
             elif node.keys[mid - 1] < key:
                 b = mid
@@ -289,7 +274,7 @@ class BTree:
         e = len(node.child) - 1
         while b < e:
             mid = (b + e + 1) // 2
-            if mid == 0:  # mid is never 0 actually
+            if mid == 0:
                 pass
             elif node.keys[mid - 1] > key:
                 e = mid - 1
@@ -297,13 +282,12 @@ class BTree:
                 b = mid
         right = b
 
-        # print(left, right, len(node.sons))
         for i in range(left, right + 1):
-            self._find_all(key, node.sons[i], ans)
+            self._find_all(key, node.sons[i], line)
 
             if i < right:
                 assert node.keys[i] == key
-                ans.append(node.keys[i])
+                line.append(node.keys[i])
 
     def find_all(self, key):
         ans = []
