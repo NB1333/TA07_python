@@ -1,215 +1,387 @@
-import random
-import time
-
-
-class BTreeNode:
-    def __init__(self, leaf=False):
-        self.leaf = leaf
-        self.keys = []
-        self.child = []
+from datetime import datetime
+from random import *
 
 
 class BTree:
+    class Node:
+
+        def __init__(self):
+            self.sons = []
+            self.keys = []
+
+        def __repr__(self):
+            return 'Node' + str(self.keys) + str(self.sons)
+
+        def _lower_bound(self, key):
+            b = 0
+            e = len(self.sons) - 1
+            while b < e:
+                mid = (b + e + 1) // 2
+                if mid == 0:  # mid is never 0 actually
+                    pass
+                elif self.keys[mid - 1] <= key:
+                    b = mid
+                else:
+                    e = mid - 1
+            return b
+
     def __init__(self, t):
-        self.root = BTreeNode(True)
+        self.root = self.Node()
         self.t = t
 
-    # Insert a key
-    def insert(self, k):
-        root = self.root
-        if len(root.keys) == (2 * self.t) - 1:
-            temp = BTreeNode()
-            self.root = temp
-            temp.child.insert(0, root)
-            self.split_child(temp, 0)
-            self.insert_non_full(temp, k)
+    def _inorder(self, cur):
+        if cur == None: return
+
+        for i, son in enumerate(cur.sons):
+            if i > 0:
+                yield cur.keys[i - 1]
+            yield from self._inorder(son)
+
+    def inorder(self):
+        yield from self._inorder(self.root)
+
+    def _preorder(self, cur):
+        if cur == None: return
+        for key in cur.keys:
+            yield key
+        for son in cur.sons:
+            yield from self._preorder(son)
+
+    def preorder(self):
+        yield from self._preorder(self.root)
+
+    def _split(self, node, parnode, pos):
+
+        # root case
+        if parnode is None:
+            self.root = self.Node()
+            left = self.Node()
+            right = self.Node()
+            left.keys = node.keys[:self.t - 1]
+            right.keys = node.keys[self.t:]
+            left.sons = node.sons[:self.t]
+            right.sons = node.sons[self.t:]
+            self.root.keys = [node.keys[self.t - 1]]
+            self.root.sons = [left, right]
+            return self.root
         else:
-            self.insert_non_full(root, k)
+            left = self.Node()
+            right = self.Node()
+            left.keys = node.keys[:self.t - 1]
+            right.keys = node.keys[self.t:]
+            left.sons = node.sons[:self.t]
+            right.sons = node.sons[self.t:]
+            parnode.keys = parnode.keys[:pos] + [node.keys[self.t - 1]] + parnode.keys[pos:]
+            parnode.sons = parnode.sons[:pos] + [left, right] + parnode.sons[pos + 1:]
 
-    # Insert non full
-    def insert_non_full(self, x, k):
-        i = len(x.keys) - 1
-        if x.leaf:
-            x.keys.append((None, None))
-            while i >= 0 and k[0] < x.keys[i][0]:
-                x.keys[i + 1] = x.keys[i]
-                i -= 1
-            x.keys[i + 1] = k
-        else:
-            while i >= 0 and k[0] < x.keys[i][0]:
-                i -= 1
-            i += 1
-            if len(x.child[i].keys) == (2 * self.t) - 1:
-                self.split_child(x, i)
-                if k[0] > x.keys[i][0]:
-                    i += 1
-            self.insert_non_full(x.child[i], k)
+    def _insert(self, key, node, parnode):
+        if node is None: return None
 
-    # Split the child
-    def split_child(self, x, i):
-        t = self.t
-        y = x.child[i]
-        z = BTreeNode(y.leaf)
-        x.child.insert(i + 1, z)
-        x.keys.insert(i, y.keys[t - 1])
-        z.keys = y.keys[t: (2 * t) - 1]
-        y.keys = y.keys[0: t - 1]
-        if not y.leaf:
-            z.child = y.child[t: 2 * t]
-            y.child = y.child[0: t - 1]
+        # node is full, and must be root
+        if len(node.keys) == 2 * self.t - 1:
+            assert node == self.root
+            node = self._split(node, parnode, -1)
+            assert len(node.keys) == 1
 
-    # Delete a node
-    def delete(self, x, k):
-        t = self.t
-        i = 0
-        while i < len(x.keys) and k[0] > x.keys[i][0]:
-            i += 1
-        if x.leaf:
-            if i < len(x.keys) and x.keys[i][0] == k[0]:
-                x.keys.pop(i)
-                return
+            # to the right
+            if node.keys[0] <= key:
+                self._insert(key, node.sons[1], node)
+            else:
+                self._insert(key, node.sons[0], node)
+
             return
 
-        if i < len(x.keys) and x.keys[i][0] == k[0]:
-            return self.delete_internal_node(x, k, i)
-        elif len(x.child[i].keys) >= t:
-            self.delete(x.child[i], k)
+        # only possible for root at the beginning
+        if len(node.sons) == 0:
+            assert node == self.root
+            node.sons.append(None)
+            node.keys.append(key)
+            node.sons.append(None)
+
+            return
+
+        pos = node._lower_bound(key)
+
+        # we are in a leaf
+        if node.sons[pos] is None:
+            node.keys = node.keys[:pos] + [key] + node.keys[pos:]
+            node.sons.append(None)
         else:
-            if i != 0 and i + 2 < len(x.child):
-                if len(x.child[i - 1].keys) >= t:
-                    self.delete_sibling(x, i, i - 1)
-                elif len(x.child[i + 1].keys) >= t:
-                    self.delete_sibling(x, i, i + 1)
+
+            # son is full, doing split from here
+            if node.sons[pos] is not None and len(node.sons[pos].keys) == 2 * self.t - 1:
+                self._split(node.sons[pos], node, pos)
+                # go to right
+                if node.keys[pos] <= key:
+                    self._insert(key, node.sons[pos + 1], node)
                 else:
-                    self.delete_merge(x, i, i + 1)
-            elif i == 0:
-                if len(x.child[i + 1].keys) >= t:
-                    self.delete_sibling(x, i, i + 1)
+                    self._insert(key, node.sons[pos], node)
+            else:
+                self._insert(key, node.sons[pos], node)
+
+    def insert(self, key):
+        self._insert(key, self.root, None)
+
+    def _find(self, key, node):
+        if node is None or len(node.sons) == 0:
+            return None
+
+        pos = node._lower_bound(key)
+
+        if pos >= 1 and node.keys[pos - 1] == key:
+            return node.keys[pos - 1]
+        else:
+            return self._find(key, node.sons[pos])
+
+    def find(self, key):
+        return self._find(key, self.root)
+
+    def _find_predecessor(self, key, node):
+        if node.sons[0] == None:
+            return node.keys[-1]
+        else:
+            return self._find_predecessor(key, node.sons[-1])
+
+    def _find_succesor(self, key, node):
+        if node.sons[0] == None:
+            return node.keys[0]
+        else:
+            return self._find_succesor(key, node.sons[0])
+
+    def _delete_key_leaf(self, key, node, pos):
+
+        # condition for correctness of algorithm
+        assert node == self.root or len(node.sons) >= self.t
+
+        assert node.keys[pos] == key
+
+        node.keys = node.keys[:pos] + node.keys[pos + 1:]
+        node.sons.pop()
+
+    def _merge_children_around_key(self, key, node, pos):
+
+        assert pos >= 0 and pos < len(node.sons) - 1
+
+        y = self.Node()
+        y.sons = node.sons[pos].sons + node.sons[pos + 1].sons
+        y.keys = node.sons[pos].keys + [node.keys[pos]] + node.sons[pos + 1].keys
+
+        node.keys = node.keys[:pos] + node.keys[pos + 1:]
+        node.sons = node.sons[:pos] + [y] + node.sons[pos + 2:]
+
+    def _move_node_from_left_child(self, node, pos):
+
+        assert pos > 0 and len(node.sons[pos - 1].keys) >= self.t
+
+        node.sons[pos].keys = [node.keys[pos - 1]] + node.sons[pos].keys
+        node.sons[pos].sons = [node.sons[pos - 1].sons[-1]] + node.sons[pos].sons
+
+        node.keys[pos - 1] = node.sons[pos - 1].keys[-1]
+
+        node.sons[pos - 1].sons = node.sons[pos - 1].sons[:-1]
+        node.sons[pos - 1].keys = node.sons[pos - 1].keys[:-1]
+
+    def _move_node_from_right_child(self, node, pos):
+
+        assert pos < len(node.sons) - 1 and len(node.sons[pos + 1].keys) >= self.t
+
+        node.sons[pos].keys = node.sons[pos].keys + [node.keys[pos]]
+        node.sons[pos].sons = node.sons[pos].sons + [node.sons[pos + 1].sons[0]]
+
+        node.keys[pos] = node.sons[pos + 1].keys[0]
+
+        node.sons[pos + 1].sons = node.sons[pos + 1].sons[1:]
+        node.sons[pos + 1].keys = node.sons[pos + 1].keys[1:]
+
+    def _fix_empty_root(self, node):
+        if node == self.root and len(node.sons) == 1:
+            self.root = node.sons[0]
+            return self.root
+        else:
+            return node
+
+    def _delete(self, key, node):
+        if node is None or len(node.sons) == 0: return
+
+        pos = node._lower_bound(key)
+
+        # the key to delete is here
+        if pos > 0 and node.keys[pos - 1] == key:
+
+            # this node is a leaf
+            if node.sons[pos] is None:
+                self._delete_key_leaf(key, node, pos - 1)
+            # left child node has enough keys
+            elif len(node.sons[pos - 1].keys) >= self.t:
+                kp = self._find_predecessor(key, node.sons[pos - 1])
+                node.keys[pos - 1] = kp
+                self._delete(kp, node.sons[pos - 1])
+            # right child node has enough keys
+            elif len(node.sons[pos].keys) >= self.t:
+                kp = self._find_succesor(key, node.sons[pos])
+                node.keys[pos - 1] = kp
+                self._delete(kp, node.sons[pos])
+            # both children have minimal number of keys, must combine them
+            else:
+                self._merge_children_around_key(key, node, pos - 1)
+
+                # here I should take care of missing root
+                node = self._fix_empty_root(node)
+
+                self._delete(key, node)
+        else:
+
+            # we are on a leave and haven't found the key, we have nothing to do
+            if node.sons[pos] is None:
+                pass
+            # the amount of keys in the child is enough, simply recurse
+            elif len(node.sons[pos].keys) >= self.t:
+                self._delete(key, node.sons[pos])
+            # we must push a key to the child
+            else:
+                # left sibbling has enough keys
+                if pos > 0 and len(node.sons[pos - 1].keys) >= self.t:
+                    self._move_node_from_left_child(node, pos)
+                    self._delete(key, node.sons[pos])
+                # right sibbling has enough keys
+                elif pos < len(node.sons) - 1 and len(node.sons[pos + 1].keys) >= self.t:
+                    self._move_node_from_right_child(node, pos)
+                    self._delete(key, node.sons[pos])
+                # must merge with one of sibblings
                 else:
-                    self.delete_merge(x, i, i + 1)
-            elif i + 1 == len(x.child):
-                if len(x.child[i - 1].keys) >= t:
-                    self.delete_sibling(x, i, i - 1)
-                else:
-                    self.delete_merge(x, i, i - 1)
-            self.delete(x.child[i], k)
 
-    # Delete internal node
-    def delete_internal_node(self, x, k, i):
-        t = self.t
-        if x.leaf:
-            if x.keys[i][0] == k[0]:
-                x.keys.pop(i)
-                return
-            return
+                    if pos > 0:
+                        self._merge_children_around_key(key, node, pos - 1)
 
-        if len(x.child[i].keys) >= t:
-            x.keys[i] = self.delete_predecessor(x.child[i])
-            return
-        elif len(x.child[i + 1].keys) >= t:
-            x.keys[i] = self.delete_successor(x.child[i + 1])
-            return
-        else:
-            self.delete_merge(x, i, i + 1)
-            self.delete_internal_node(x.child[i], k, self.t - 1)
+                        # here I should take care of missing root
+                        node = self._fix_empty_root(node)
 
-    # Delete the predecessor
-    def delete_predecessor(self, x):
-        if x.leaf:
-            return x.pop()
-        n = len(x.keys) - 1
-        if len(x.child[n].keys) >= self.t:
-            self.delete_sibling(x, n + 1, n)
-        else:
-            self.delete_merge(x, n, n + 1)
-        self.delete_predecessor(x.child[n])
+                        self._delete(key, node)
+                    elif pos < len(node.sons) - 1:
+                        self._merge_children_around_key(key, node, pos)
 
-    # Delete the successor
-    def delete_successor(self, x):
-        if x.leaf:
-            return x.keys.pop(0)
-        if len(x.child[1].keys) >= self.t:
-            self.delete_sibling(x, 0, 1)
-        else:
-            self.delete_merge(x, 0, 1)
-        self.delete_successor(x.child[0])
+                        # here I should take care of missing root
+                        node = self._fix_empty_root(node)
 
-    # Delete resolution
-    def delete_merge(self, x, i, j):
-        cnode = x.child[i]
+                        self._delete(key, node)
+                    # this shouldn't be possible
+                    else:
+                        assert False
 
-        if j > i:
-            rsnode = x.child[j]
-            cnode.keys.append(x.keys[i])
-            for k in range(len(rsnode.keys)):
-                cnode.keys.append(rsnode.keys[k])
-                if len(rsnode.child) > 0:
-                    cnode.child.append(rsnode.child[k])
-            if len(rsnode.child) > 0:
-                cnode.child.append(rsnode.child.pop())
-            new = cnode
-            x.keys.pop(i)
-            x.child.pop(j)
-        else:
-            lsnode = x.child[j]
-            lsnode.keys.append(x.keys[j])
-            for i in range(len(cnode.keys)):
-                lsnode.keys.append(cnode.keys[i])
-                if len(lsnode.child) > 0:
-                    lsnode.child.append(cnode.child[i])
-            if len(lsnode.child) > 0:
-                lsnode.child.append(cnode.child.pop())
-            new = lsnode
-            x.keys.pop(j)
-            x.child.pop(i)
+    def delete(self, key):
+        self._delete(key, self.root)
 
-        if x == self.root and len(x.keys) == 0:
-            self.root = new
+    def _find_all(self, key, node, ans):
+        if node is None or len(node.sons) == 0: return
+        b = 0
+        e = len(node.sons) - 1
+        while b < e:
+            mid = (b + e + 1) // 2
+            if mid == 0:  # mid is never 0 actually
+                pass
+            elif node.keys[mid - 1] < key:
+                b = mid
+            else:
+                e = mid - 1
 
-    # Delete the sibling
-    def delete_sibling(self, x, i, j):
-        cnode = x.child[i]
-        if i < j:
-            rsnode = x.child[j]
-            cnode.keys.append(x.keys[i])
-            x.keys[i] = rsnode.keys[0]
-            if len(rsnode.child) > 0:
-                cnode.child.append(rsnode.child[0])
-                rsnode.child.pop(0)
-            rsnode.keys.pop(0)
-        else:
-            lsnode = x.child[j]
-            cnode.keys.insert(0, x.keys[i - 1])
-            x.keys[i - 1] = lsnode.keys.pop()
-            if len(lsnode.child) > 0:
-                cnode.child.insert(0, lsnode.child.pop())
+        left = b
 
-    # Print the tree
-    def print_tree(self, x, l=0):
-        print("Level ", l, " ", len(x.keys), end=":")
-        for i in x.keys:
-            print(i, end=" ")
-        print()
-        l += 1
-        if len(x.child) > 0:
-            for i in x.child:
-                self.print_tree(i, l)
+        b = 0
+        e = len(node.sons) - 1
+        while b < e:
+            mid = (b + e + 1) // 2
+            if mid == 0:  # mid is never 0 actually
+                pass
+            elif node.keys[mid - 1] > key:
+                e = mid - 1
+            else:
+                b = mid
+        right = b
+
+        # print(left, right, len(node.sons))
+        for i in range(left, right + 1):
+            self._find_all(key, node.sons[i], ans)
+
+            if i < right:
+                assert node.keys[i] == key
+                ans.append(node.keys[i])
+
+    def find_all(self, key):
+        ans = []
+        self._find_all(key, self.root, ans)
+        return ans
 
 
-B = BTree(3)
+randomTree = BTree(3)
 
-timeStart = time.time()
 
-for i in range(100_000):
-    B.insert((i, random.randint(10, 888)))
-B.print_tree(B.root)
+def randomInsertion(rangeSize):
+    startTime = datetime.now()
+    for i in range(rangeSize):
+        randomTree.insert(randint(1, 595959))
+    endtime = datetime.now()
 
-print('Insertion time %.6f seconds' % (time.time() - timeStart))
+    print('insertion time:', (endtime - startTime))
 
-startTime = time.time()
-for i in range(100_000):
-    B.delete(B.root, (1,))
-B.print_tree(B.root)
 
-print('Deleting time %.6f seconds' % (time.time() - timeStart))
+def randomFind(rangeSize):
+    startTime = datetime.now()
+    for i in range(rangeSize):
+        randomTree.find(i)
+    endtime = datetime.now()
+
+    print('searching time:', (endtime - startTime))
+
+
+def randomDeletion(rangeSize):
+    startTime = datetime.now()
+    for i in range(rangeSize):
+        randomTree.delete(i)
+    endtime = datetime.now()
+
+    print('deletion time:', (endtime - startTime))
+
+
+sequentalTree = BTree(3)
+
+
+def sequentalInsertion(rangeSize):
+    startTime = datetime.now()
+    for i in range(rangeSize):
+        sequentalTree.insert(i)
+    endtime = datetime.now()
+
+    print('insertion time:', (endtime - startTime))
+
+
+def sequentalFind(rangeSize):
+    startTime = datetime.now()
+    for i in range(rangeSize):
+        randomTree.find(i)
+    endtime = datetime.now()
+
+    print('searching time:', (endtime - startTime))
+
+
+def sequentalDeletion(rangeSize):
+    startTime = datetime.now()
+    for i in range(rangeSize):
+        sequentalTree.delete(i)
+    endtime = datetime.now()
+
+    print('deletion time:', (endtime - startTime))
+
+
+if __name__ == '__main__':
+    rangeSize = 1_000_00
+
+    randomInsertion(rangeSize)
+    randomFind(rangeSize)
+    randomDeletion(rangeSize)
+
+    print()
+
+    sequentalInsertion(rangeSize)
+    sequentalFind(rangeSize)
+    sequentalDeletion(rangeSize)
 
