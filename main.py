@@ -356,7 +356,9 @@ def sequentalDeletion(rangeSize):
 
 
 if __name__ == '__main__':
-    rangeSize = 1_000_000
+    rangeSize = 10_000_000
+
+    print('The next result is for %d elements' % rangeSize)
 
     randomInsertion(rangeSize)
     randomFind(rangeSize)
